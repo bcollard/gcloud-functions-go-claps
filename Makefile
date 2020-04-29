@@ -24,18 +24,6 @@ call-local-get-claps: ## call the function locally
 	#curl -X GET http://localhost:8080/ -H "Referer: http://localhosdt:1313/posts/openldap-helm-chart/"
 	#curl -X GET http://localhost:8080/ -H "Referer: https://www.baptistout.net/posts/o?penldap-helm-chart/"
 
-local-firestore: ## run a local firestore
-	firebase emulators:start --only firestore --import firestore-dump-personal-218506/2020-04-21T08:42:16_78280
-
-start-local-redis: ## run a local redis store (docker)
-	docker run -d -p 6379:6379 --name redis-rate-limiter redis
-
-stop-local-redis: ## stop the local redis (docker)
-	docker stop redis-rate-limiter
-
-rm-local-redis: ## rm the local redis (docker)
-	docker rm redis-rate-limiter
-
 
 
 # REMOTE
@@ -56,19 +44,4 @@ deploy: ## deploy the function to GCP
 
 call-get-claps: ## call the function deployed on GCP
 	@curl -X GET https://${GCP_REGION}-${PROJECT_ID}.cloudfunctions.net/${FUNCTION} -H "Referer: https://www.baptistout.net/posts/openldap-helm-chart/" -H "Origin: https://www.baptistout.net"
-
-
-
-# NOTES
-define HIST
-List available actions with:
-> make help
-
-There are two groups of actions: LOCAL and REMOTE, see the Makefile comments.
-endef
-export HIST
-
-notes: ## print various information
-	@H=$$(echo "$$HIST" | sed -E 's/^> (.*)$$/\\033[90m\1\\033[0m/g') ;\
-	echo "$$H" ;\
 
