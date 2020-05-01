@@ -11,7 +11,7 @@ import (
 )
 
 var count = 0
-var redisPool *redis.Pool
+var redisPool redis.Pool
 var mux = newMux()
 var httpRateLimiter *throttled.HTTPRateLimiter
 
@@ -33,7 +33,7 @@ func init() {
 	redisAddr := fmt.Sprintf("%s:%s", redisHost, redisPort)
 
 	const maxConnections = 10
-	redisPool = &redis.Pool{
+	redisPool = redis.Pool{
 		Dial: func() (redis.Conn, error) {
 			conn, err := redis.Dial("tcp", redisAddr)
 			if err != nil {
@@ -56,7 +56,7 @@ func newMux() *http.ServeMux {
 		MaxBurst: 5,
 	}
 
-	store, err := redigostore.New(redisPool, "ip:", 0);
+	store, err := redigostore.New(&redisPool, "ip:", 0);
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -74,8 +74,9 @@ func newMux() *http.ServeMux {
 		VaryBy:      &throttled.VaryBy{RemoteAddr: true},
 	}
 
-	mux.Handle("/", httpRateLimiter.RateLimit(mux)) // commenté car doublon register sur '/'
-	//httpRateLimiter.RateLimit(mux)
+	mux.Handle("/", httpRateLimiter.RateLimit(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		fmt.Fprintf(writer, "rate-limited, b*tch")
+	})))
 
 	// route mapping
 	mux.HandleFunc("/one", func(writer http.ResponseWriter, r *http.Request) {
