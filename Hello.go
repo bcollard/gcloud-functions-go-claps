@@ -2,19 +2,23 @@ package claps
 
 import (
 	"fmt"
+	"github.com/gomodule/redigo/redis"
+	"github.com/throttled/throttled"
+	"github.com/throttled/throttled/store/redigostore"
 	"log"
 	"net/http"
 	"os"
-
-	"github.com/gomodule/redigo/redis"
-	"github.com/bcollard/go-ratelimit"
 )
 
 var count = 0
 var redisPool *redis.Pool
+var mux = newMux()
+var httpRateLimiter *throttled.HTTPRateLimiter
 
 // function cold start init
 func init() {
+
+	// REDIS RATE LIMITING
 	redisHost := os.Getenv("REDIS_HOST")
 	if redisHost == "" {
 		fmt.Println("REDIS_HOST must be set")
@@ -42,22 +46,72 @@ func init() {
 
 }
 
+// custom HTTP Multiplexer
+func newMux() *http.ServeMux {
+	mux := http.NewServeMux()
+
+	// rate limiter middleware
+	quota := throttled.RateQuota{
+		MaxRate: throttled.PerMin(2),
+		MaxBurst: 5,
+	}
+
+	store, err := redigostore.New(redisPool, "ip:", 0);
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	ratelimiter, err := throttled.NewGCRARateLimiter(store, quota)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	//headers := []string{"x-forwarded-for"}
+
+	httpRateLimiter = &throttled.HTTPRateLimiter{
+		RateLimiter: ratelimiter,
+		//VaryBy:      &throttled.VaryBy{Headers: headers},
+		VaryBy:      &throttled.VaryBy{RemoteAddr: true},
+	}
+
+	mux.Handle("/", httpRateLimiter.RateLimit(mux)) // commenté car doublon register sur '/'
+	//httpRateLimiter.RateLimit(mux)
+
+	// route mapping
+	mux.HandleFunc("/one", func(writer http.ResponseWriter, r *http.Request) {
+		fmt.Fprintf(writer, "%v", count)
+	})
+
+	//mux.HandleFunc("/", func(writer http.ResponseWriter, r *http.Request) {
+	//	fmt.Fprintf(writer, "slash")
+	//})
+
+	return mux
+}
+
+
 // Clapsgo prints a figure incrementally
 func Clapsgo(w http.ResponseWriter, r *http.Request) {
 
-	w.Header().Set("Access-Control-Allow-Origin", "*")
+	count++
 
+	w.Header().Set("Access-Control-Allow-Origin", "*")
 	conn := redisPool.Get()
 	defer conn.Close()
 
-	counter, err := redis.Int(conn.Do("INCR", "visits"))
-	if err != nil {
-		log.Printf("redis.Int: %v", err)
-		http.Error(w, "Error incrementing visit count", http.StatusInternalServerError)
-		return
-	}
-	fmt.Fprintf(w, "Visit count: %d", counter)
+	// use another http.ServeMux in order to do some routing by sub-paths
+	mux.ServeHTTP(w, r)
 
+	fmt.Fprintf(w, "main")
+
+	//switch r.Method {
+	//case http.MethodGet:
+	//	fmt.Fprint(w, count)
+	//case http.MethodPost:
+	//	http.Error(w, "403 - Forbidden", http.StatusForbidden)
+	//default:
+	//	http.Error(w, "405 - Method Not Allowed", http.StatusMethodNotAllowed)
+	//}
 
 }
 
