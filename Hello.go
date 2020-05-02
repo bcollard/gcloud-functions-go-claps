@@ -52,7 +52,7 @@ func initializeRedis() (*redis.Pool, error) {
 func newMux() *http.ServeMux {
 	mux := http.NewServeMux()
 
-	// rate limiter middleware
+	// RATE LIMITING
 	quota := throttled.RateQuota{
 		MaxRate: throttled.PerMin(2),
 		MaxBurst: 5,
@@ -85,6 +85,8 @@ func newMux() *http.ServeMux {
 
 	// main router: apply rate-limiting to GET + POST methods and route request to dedicated functions
 	mux.Handle("/", httpRateLimiter.RateLimit(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		handleCors(writer, request)
+
 		switch request.Method  {
 		case http.MethodGet:
 			getClaps(writer, request)
@@ -106,19 +108,9 @@ func newMux() *http.ServeMux {
 	return mux
 }
 
-func postClaps(writer http.ResponseWriter, request *http.Request) {
-	fmt.Fprintf(writer, "post")
-}
-
-func getClaps(writer http.ResponseWriter, request *http.Request) {
-	fmt.Fprintf(writer, "get")
-}
-
-// Clapsgo is the Function entrypoint
-func Clapsgo(w http.ResponseWriter, r *http.Request) {
-
+func handleCors(writer http.ResponseWriter, request *http.Request) {
 	// CORS
-	origin := r.Header.Get("Origin")
+	origin := request.Header.Get("Origin")
 	whitelistOrigin := []string{"http://localhost", "https://www.baptistout.net"}
 	var originAllowed bool
 
@@ -129,10 +121,23 @@ func Clapsgo(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if originAllowed {
-		w.Header().Set("Access-Control-Allow-Origin", origin)
+		writer.Header().Set("Access-Control-Allow-Origin", origin)
 	} else {
-		w.WriteHeader(http.StatusForbidden)
+		writer.WriteHeader(http.StatusForbidden)
 	}
+}
+
+func postClaps(writer http.ResponseWriter, request *http.Request) {
+	fmt.Fprintf(writer, "post")
+}
+
+func getClaps(writer http.ResponseWriter, request *http.Request) {
+	fmt.Fprintf(writer, "get")
+}
+
+
+// Clapsgo is the Function entrypoint
+func Clapsgo(w http.ResponseWriter, r *http.Request) {
 
 	// use another http.ServeMux in order to do some routing by sub-paths
 	mux.ServeHTTP(w, r)
