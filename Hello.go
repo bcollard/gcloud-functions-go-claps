@@ -11,13 +11,17 @@ import (
 )
 
 var count = 0
-var redisPool redis.Pool
+var redisPool *redis.Pool
 var mux = newMux()
 var httpRateLimiter *throttled.HTTPRateLimiter
+const REDIS_MAX_CONN = 10
 
 // function cold start init
 func init() {
 
+}
+
+func initializeRedis() (*redis.Pool, error) {
 	// REDIS RATE LIMITING
 	redisHost := os.Getenv("REDIS_HOST")
 	if redisHost == "" {
@@ -32,8 +36,7 @@ func init() {
 
 	redisAddr := fmt.Sprintf("%s:%s", redisHost, redisPort)
 
-	const maxConnections = 10
-	redisPool = redis.Pool{
+	return &redis.Pool{
 		Dial: func() (redis.Conn, error) {
 			conn, err := redis.Dial("tcp", redisAddr)
 			if err != nil {
@@ -41,9 +44,8 @@ func init() {
 			}
 			return conn, err
 		},
-		MaxIdle: maxConnections,
-	}
-
+		MaxIdle: REDIS_MAX_CONN,
+	}, nil
 }
 
 // custom HTTP Multiplexer
@@ -56,7 +58,15 @@ func newMux() *http.ServeMux {
 		MaxBurst: 5,
 	}
 
-	store, err := redigostore.New(&redisPool, "ip:", 0);
+	// Pre-declare err to avoid shadowing redisPool
+	var err error
+	redisPool, err = initializeRedis()
+	if err != nil {
+		fmt.Println("redis initialization failed")
+		os.Exit(1)
+	}
+
+	store, err := redigostore.New(redisPool, "ip:", 0);
 	if err != nil {
 		log.Fatal(err)
 	}
