@@ -71,7 +71,6 @@ func newMux() *http.ServeMux {
 	httpRateLimiter = &throttled.HTTPRateLimiter{
 		RateLimiter: ratelimiter,
 		VaryBy:      &throttled.VaryBy{Headers: headers},
-		//VaryBy:      &throttled.VaryBy{RemoteAddr: true},
 	}
 
 	// main router: apply rate-limiting to GET + POST methods and route request to dedicated functions
@@ -89,14 +88,10 @@ func newMux() *http.ServeMux {
 		}
 	})))
 
-	// route mapping
+	// API subpath
 	mux.HandleFunc("/one", func(writer http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(writer, "%v", count)
 	})
-
-	//mux.HandleFunc("/", func(writer http.ResponseWriter, r *http.Request) {
-	//	fmt.Fprintf(writer, "slash")
-	//})
 
 	return mux
 }
@@ -109,11 +104,8 @@ func getClaps(writer http.ResponseWriter, request *http.Request) {
 	fmt.Fprintf(writer, "get")
 }
 
-
 // Clapsgo is the Function entrypoint
 func Clapsgo(w http.ResponseWriter, r *http.Request) {
-
-	count++
 
 	// CORS
 	origin := r.Header.Get("Origin")
@@ -132,14 +124,7 @@ func Clapsgo(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusForbidden)
 	}
 
-	// get one connection from the Redis pool per request
-	conn := redisPool.Get()
-	defer conn.Close()
-
 	// use another http.ServeMux in order to do some routing by sub-paths
 	mux.ServeHTTP(w, r)
-
-	//fmt.Fprintf(w, "main")
-
 }
 
