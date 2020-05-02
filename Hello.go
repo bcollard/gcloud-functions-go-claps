@@ -66,16 +66,27 @@ func newMux() *http.ServeMux {
 		log.Fatal(err)
 	}
 
-	//headers := []string{"x-forwarded-for"}
+	headers := []string{"x-forwarded-for"}
 
 	httpRateLimiter = &throttled.HTTPRateLimiter{
 		RateLimiter: ratelimiter,
-		//VaryBy:      &throttled.VaryBy{Headers: headers},
-		VaryBy:      &throttled.VaryBy{RemoteAddr: true},
+		VaryBy:      &throttled.VaryBy{Headers: headers},
+		//VaryBy:      &throttled.VaryBy{RemoteAddr: true},
 	}
 
+	// main router: apply rate-limiting to GET + POST methods and route request to dedicated functions
 	mux.Handle("/", httpRateLimiter.RateLimit(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		fmt.Fprintf(writer, "rate-limited, b*tch")
+		switch request.Method  {
+		case http.MethodGet:
+			getClaps(writer, request)
+			break
+		case http.MethodPost:
+			postClaps(writer, request)
+			break
+		default:
+			writer.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
 	})))
 
 	// route mapping
@@ -90,29 +101,45 @@ func newMux() *http.ServeMux {
 	return mux
 }
 
+func postClaps(writer http.ResponseWriter, request *http.Request) {
+	fmt.Fprintf(writer, "post")
+}
 
-// Clapsgo prints a figure incrementally
+func getClaps(writer http.ResponseWriter, request *http.Request) {
+	fmt.Fprintf(writer, "get")
+}
+
+
+// Clapsgo is the Function entrypoint
 func Clapsgo(w http.ResponseWriter, r *http.Request) {
 
 	count++
 
-	w.Header().Set("Access-Control-Allow-Origin", "*")
+	// CORS
+	origin := r.Header.Get("Origin")
+	whitelistOrigin := []string{"http://localhost", "https://www.baptistout.net"}
+	var originAllowed bool
+
+	for _, v := range whitelistOrigin {
+		if v == origin {
+			originAllowed = true
+		}
+	}
+
+	if originAllowed {
+		w.Header().Set("Access-Control-Allow-Origin", origin)
+	} else {
+		w.WriteHeader(http.StatusForbidden)
+	}
+
+	// get one connection from the Redis pool per request
 	conn := redisPool.Get()
 	defer conn.Close()
 
 	// use another http.ServeMux in order to do some routing by sub-paths
 	mux.ServeHTTP(w, r)
 
-	fmt.Fprintf(w, "main")
-
-	//switch r.Method {
-	//case http.MethodGet:
-	//	fmt.Fprint(w, count)
-	//case http.MethodPost:
-	//	http.Error(w, "403 - Forbidden", http.StatusForbidden)
-	//default:
-	//	http.Error(w, "405 - Method Not Allowed", http.StatusMethodNotAllowed)
-	//}
+	//fmt.Fprintf(w, "main")
 
 }
 
