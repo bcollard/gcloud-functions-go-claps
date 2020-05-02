@@ -62,8 +62,7 @@ func newMux() *http.ServeMux {
 	var err error
 	redisPool, err = initializeRedis()
 	if err != nil {
-		fmt.Println("redis initialization failed")
-		os.Exit(1)
+		log.Fatal(err)
 	}
 
 	store, err := redigostore.New(redisPool, "ip:", 0);
@@ -83,10 +82,18 @@ func newMux() *http.ServeMux {
 		VaryBy:      &throttled.VaryBy{Headers: headers},
 	}
 
-	// main router: apply rate-limiting to GET + POST methods and route request to dedicated functions
+	// MAIN ROUTER: apply rate-limiting to GET + POST methods and route request to dedicated functions
 	mux.Handle("/", httpRateLimiter.RateLimit(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		handleCors(writer, request)
+		// CORS
+		validCors, origin := validCors(request)
+		if ! validCors {
+			writer.WriteHeader(http.StatusForbidden)
+			return
+		} else {
+			writer.Header().Set("Access-Control-Allow-Origin", origin)
+		}
 
+		// METHOD switch
 		switch request.Method  {
 		case http.MethodGet:
 			getClaps(writer, request)
@@ -108,8 +115,8 @@ func newMux() *http.ServeMux {
 	return mux
 }
 
-func handleCors(writer http.ResponseWriter, request *http.Request) {
-	// CORS
+
+func validCors(request *http.Request) (bool, string) {
 	origin := request.Header.Get("Origin")
 	whitelistOrigin := []string{"http://localhost", "https://www.baptistout.net"}
 	var originAllowed bool
@@ -120,11 +127,7 @@ func handleCors(writer http.ResponseWriter, request *http.Request) {
 		}
 	}
 
-	if originAllowed {
-		writer.Header().Set("Access-Control-Allow-Origin", origin)
-	} else {
-		writer.WriteHeader(http.StatusForbidden)
-	}
+	return originAllowed, origin
 }
 
 func postClaps(writer http.ResponseWriter, request *http.Request) {
