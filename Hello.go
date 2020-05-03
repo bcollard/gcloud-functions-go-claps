@@ -82,30 +82,32 @@ func newMux() *http.ServeMux {
 		VaryBy:      &throttled.VaryBy{Headers: headers},
 	}
 
-	// MAIN ROUTER: apply rate-limiting to GET + POST methods and route request to dedicated functions
-	mux.Handle("/", httpRateLimiter.RateLimit(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		// CORS
-		validCors, origin := validCors(request)
-		if ! validCors {
-			writer.WriteHeader(http.StatusForbidden)
-			return
-		} else {
-			writer.Header().Set("Access-Control-Allow-Origin", origin)
-		}
+	// MAIN ROUTER: apply rate-limiting to GET + POST methods and route request to dedicated function
+	mux.Handle("/", httpRateLimiter.RateLimit(
+		http.HandlerFunc(
+			func(writer http.ResponseWriter, request *http.Request) {
+				// CORS
+				validCors, origin := validCors(request)
+				if ! validCors {
+					writer.WriteHeader(http.StatusForbidden)
+					return
+				} else {
+					writer.Header().Set("Access-Control-Allow-Origin", origin)
+				}
 
-		// METHOD switch
-		switch request.Method  {
-		case http.MethodGet:
-			getClaps(writer, request)
-			break
-		case http.MethodPost:
-			postClaps(writer, request)
-			break
-		default:
-			writer.WriteHeader(http.StatusMethodNotAllowed)
-			return
-		}
-	})))
+				// METHOD switch
+				switch request.Method  {
+				case http.MethodGet:
+					getClaps(writer, request)
+					break
+				case http.MethodPost:
+					postClaps(writer, request)
+					break
+				default:
+					writer.WriteHeader(http.StatusMethodNotAllowed)
+					return
+				}
+			})))
 
 	// API subpath
 	mux.HandleFunc("/one", func(writer http.ResponseWriter, r *http.Request) {
