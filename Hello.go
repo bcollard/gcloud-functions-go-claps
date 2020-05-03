@@ -12,13 +12,13 @@ import (
 
 var count = 0
 var redisPool *redis.Pool
-var mux = newMux()
+var mux *http.ServeMux
 var httpRateLimiter *throttled.HTTPRateLimiter
 const REDIS_MAX_CONN = 10
 
 // function cold start init
 func init() {
-
+	mux = newMux()
 }
 
 func initializeRedis() (*redis.Pool, error) {
