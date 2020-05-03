@@ -6,6 +6,7 @@ export FIRESTORE_ENV=local
 export SUPER_USER_MAIL_ADDRESS=baptiste.collard@gmail.com
 export REDIS_HOST=localhost
 export REDIS_PORT=6379
+export FIRESTORE_EMULATOR_HOST=localhost:8081
 
 .ONESHELL:
 .PHONY: deploy call-local-get-claps dev call-get-claps notes local-firestore

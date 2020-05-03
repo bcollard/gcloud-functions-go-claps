@@ -1,10 +1,13 @@
 package claps
 
 import (
+	"cloud.google.com/go/firestore"
+	"context"
 	"fmt"
 	"github.com/gomodule/redigo/redis"
 	"github.com/throttled/throttled"
 	"github.com/throttled/throttled/store/redigostore"
+	"google.golang.org/api/iterator"
 	"log"
 	"net/http"
 	"os"
@@ -15,10 +18,13 @@ var redisPool *redis.Pool
 var mux *http.ServeMux
 var httpRateLimiter *throttled.HTTPRateLimiter
 const REDIS_MAX_CONN = 10
+var client *firestore.Client
+const COLLECTION = "claps"
 
 // function cold start init
 func init() {
 	mux = newMux()
+
 }
 
 func initializeRedis() (*redis.Pool, error) {
@@ -137,7 +143,48 @@ func postClaps(writer http.ResponseWriter, request *http.Request) {
 }
 
 func getClaps(writer http.ResponseWriter, request *http.Request) {
-	fmt.Fprintf(writer, "get")
+	referrer := request.Header.Get("Referer")
+
+	// FIRESTORE
+	projectId := os.Getenv("PROJECT_ID")
+	if projectId == "" {
+		fmt.Println("PROJECT_ID must be set")
+		os.Exit(1)
+	}
+
+	// connection
+	// TODO: use a pooled connection when running in Google Functions env; see 'options' package
+	ctx := context.Background()
+	var err error
+	client, err = firestore.NewClient(ctx, projectId)
+	if err != nil {
+		log.Fatalf("could not initialize Firestore client for project %s: %v", projectId, err)
+	}
+	defer client.Close()
+
+	claps := client.Collection("claps")
+	q := claps.Where("url", "==", referrer).Limit(1)
+
+	iter := q.Documents(ctx)
+	defer iter.Stop()
+	for {
+		doc, err := iter.Next()
+		if err == iterator.Done {
+			break
+		}
+		if err != nil {
+			log.Fatalf("could not iterate on results")
+			break
+		}
+		claps, err := doc.DataAt("claps")
+		if err != nil {
+			log.Fatalf("could not get claps count")
+			break
+		}
+		fmt.Fprintf(writer, "%v", claps)
+	}
+
+
 }
 
 
