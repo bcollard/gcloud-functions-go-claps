@@ -7,7 +7,6 @@ import (
 	"github.com/gomodule/redigo/redis"
 	"github.com/throttled/throttled"
 	"github.com/throttled/throttled/store/redigostore"
-	"google.golang.org/api/iterator"
 	"log"
 	"net/http"
 	"os"
@@ -20,10 +19,17 @@ var httpRateLimiter *throttled.HTTPRateLimiter
 const REDIS_MAX_CONN = 10
 var client *firestore.Client
 const COLLECTION = "claps"
+var PROJECT_ID = ""
 
 // function cold start init
 func init() {
 	mux = newMux()
+
+	PROJECT_ID = os.Getenv("PROJECT_ID")
+	if PROJECT_ID == "" {
+		fmt.Println("PROJECT_ID must be set")
+		os.Exit(1)
+	}
 
 }
 
@@ -138,53 +144,70 @@ func validCors(request *http.Request) (bool, string) {
 	return originAllowed, origin
 }
 
+// POST
 func postClaps(writer http.ResponseWriter, request *http.Request) {
-	fmt.Fprintf(writer, "post")
-}
 
-func getClaps(writer http.ResponseWriter, request *http.Request) {
 	referrer := request.Header.Get("Referer")
 
-	// FIRESTORE
-	projectId := os.Getenv("PROJECT_ID")
-	if projectId == "" {
-		fmt.Println("PROJECT_ID must be set")
-		os.Exit(1)
-	}
-
-	// connection
+	// FIRESTORE CONNECTION
 	// TODO: use a pooled connection when running in Google Functions env; see 'options' package
 	ctx := context.Background()
 	var err error
-	client, err = firestore.NewClient(ctx, projectId)
+	client, err = firestore.NewClient(ctx, PROJECT_ID)
 	if err != nil {
-		log.Fatalf("could not initialize Firestore client for project %s: %v", projectId, err)
+		log.Fatalf("could not initialize Firestore client for project %s: %v", PROJECT_ID, err)
 	}
 	defer client.Close()
 
 	claps := client.Collection("claps")
 	q := claps.Where("url", "==", referrer).Limit(1)
 
-	iter := q.Documents(ctx)
-	defer iter.Stop()
-	for {
-		doc, err := iter.Next()
-		if err == iterator.Done {
-			break
-		}
+	documentSnapshot, err := q.Documents(ctx).Next()
+	if err != nil {
+		fmt.Printf("could not iterate: %v", err)
+		// ADD new doc
+		claps.Add(ctx, map[string]interface{}{
+			"url": referrer,
+			"claps": 1,
+		})
+	} else {
+		// UPDATE doc
+		rawClaps, err := documentSnapshot.DataAt("claps")
 		if err != nil {
-			log.Fatalf("could not iterate on results")
-			break
+			fmt.Printf("could not get claps count, %v", err)
 		}
-		claps, err := doc.DataAt("claps")
-		if err != nil {
-			log.Fatalf("could not get claps count")
-			break
-		}
-		fmt.Fprintf(writer, "%v", claps)
+		documentSnapshot.Ref.Update(ctx, []firestore.Update{{Path: "claps", Value: rawClaps.(int64) + 1}})
 	}
+}
 
+// GET
+func getClaps(writer http.ResponseWriter, request *http.Request) {
+	referrer := request.Header.Get("Referer")
 
+	// FIRESTORE connection
+	// TODO: use a pooled connection when running in Google Functions env; see 'options' package
+	ctx := context.Background()
+	var err error
+	client, err = firestore.NewClient(ctx, PROJECT_ID)
+	if err != nil {
+		log.Fatalf("could not initialize Firestore client for project %s: %v", PROJECT_ID, err)
+	}
+	defer client.Close()
+
+	claps := client.Collection("claps")
+	q := claps.Where("url", "==", referrer).Limit(1)
+
+	documentSnapshot, err := q.Documents(ctx).Next()
+	if err != nil {
+		// doesn't exist, returns 0
+		fmt.Fprint(writer,0)
+	} else {
+		clapsCount, err := documentSnapshot.DataAt("claps")
+		if err != nil {
+			fmt.Printf("could not get claps count, %v", err)
+		}
+		fmt.Fprintf(writer, "%v", clapsCount)
+	}
 }
 
 
