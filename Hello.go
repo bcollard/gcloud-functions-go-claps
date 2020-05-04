@@ -10,6 +10,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"regexp"
 )
 
 var count = 0
@@ -20,6 +21,10 @@ const REDIS_MAX_CONN = 10
 var client *firestore.Client
 const COLLECTION = "claps"
 var PROJECT_ID = ""
+var REFERRER_WHITELIST_REGEX = `^https:\/\/www.baptistout.net\/posts\/[\w\d-]+\/?$`
+var referrerRegexp *regexp.Regexp
+var CORS_WHITELIST = []string{"https://www.baptistout.net"}
+var OAUTH_REDIRECT_URI = "http://localhost:8080/secure/oauthcallback"
 
 // function cold start init
 func init() {
@@ -29,6 +34,14 @@ func init() {
 	if PROJECT_ID == "" {
 		fmt.Println("PROJECT_ID must be set")
 		os.Exit(1)
+	}
+
+	if os.Getenv("FIRESTORE_ENV") == "local" {
+		CORS_WHITELIST = append(CORS_WHITELIST,"http://localhost:1313")
+		referrerRegexp, _ = regexp.Compile(`^http:\/\/localhost:1313\/posts\/[\w\d-]+\/?$`)
+	} else {
+		OAUTH_REDIRECT_URI = os.Getenv("OAUTH_REDIRECT_URI")
+		referrerRegexp, _ = regexp.Compile(REFERRER_WHITELIST_REGEX)
 	}
 
 }
@@ -107,6 +120,13 @@ func newMux() *http.ServeMux {
 					writer.Header().Set("Access-Control-Allow-Origin", origin)
 				}
 
+				// REFERRER
+				validReferrer, referrer := validReferrer(request)
+				if referrer != "" && ! validReferrer {
+					writer.WriteHeader(http.StatusForbidden)
+					return
+				}
+
 				// METHOD switch
 				switch request.Method  {
 				case http.MethodGet:
@@ -132,16 +152,19 @@ func newMux() *http.ServeMux {
 
 func validCors(request *http.Request) (bool, string) {
 	origin := request.Header.Get("Origin")
-	whitelistOrigin := []string{"http://localhost", "https://www.baptistout.net"}
-	var originAllowed bool
 
-	for _, v := range whitelistOrigin {
+	for _, v := range CORS_WHITELIST {
 		if v == origin {
-			originAllowed = true
+			return true, origin
 		}
 	}
 
-	return originAllowed, origin
+	return false, origin
+}
+
+func validReferrer(request *http.Request) (bool, string) {
+	referrer := request.Header.Get("Referer")
+	return referrerRegexp.MatchString(referrer), referrer
 }
 
 // POST
@@ -150,7 +173,7 @@ func postClaps(writer http.ResponseWriter, request *http.Request) {
 	referrer := request.Header.Get("Referer")
 
 	// FIRESTORE CONNECTION
-	// TODO: use a pooled connection when running in Google Functions env; see 'options' package
+	// TODO: use a connection pool; see 'google.golang.org/api/option' package
 	ctx := context.Background()
 	var err error
 	client, err = firestore.NewClient(ctx, PROJECT_ID)
@@ -185,7 +208,7 @@ func getClaps(writer http.ResponseWriter, request *http.Request) {
 	referrer := request.Header.Get("Referer")
 
 	// FIRESTORE connection
-	// TODO: use a pooled connection when running in Google Functions env; see 'options' package
+	// TODO: use a connection pool; see 'google.golang.org/api/option' package
 	ctx := context.Background()
 	var err error
 	client, err = firestore.NewClient(ctx, PROJECT_ID)
