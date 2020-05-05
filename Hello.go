@@ -25,6 +25,10 @@ var REFERRER_WHITELIST_REGEX = `^https:\/\/www.baptistout.net\/posts\/[\w\d-]+\/
 var referrerRegexp *regexp.Regexp
 var CORS_WHITELIST = []string{"https://www.baptistout.net"}
 var OAUTH_REDIRECT_URI = "http://localhost:8080/secure/oauthcallback"
+var IP_COUNT_GET_MAP, IP_COUNT_POST_MAP map[string]int
+const MAX_GET_PER_IP = 1000;
+const MAX_POST_PER_IP = 200;
+
 
 // function cold start init
 func init() {
@@ -44,6 +48,8 @@ func init() {
 		referrerRegexp, _ = regexp.Compile(REFERRER_WHITELIST_REGEX)
 	}
 
+	IP_COUNT_GET_MAP = make(map[string]int, 10)
+	IP_COUNT_POST_MAP = make(map[string]int, 10)
 }
 
 func initializeRedis() (*redis.Pool, error) {
@@ -169,8 +175,21 @@ func validReferrer(request *http.Request) (bool, string) {
 
 // POST
 func postClaps(writer http.ResponseWriter, request *http.Request) {
-
 	referrer := request.Header.Get("Referer")
+	ip := request.Header.Get("x-forwarded-for")
+
+	// REQUEST COUNT LIMIT
+	ipCount, prs := IP_COUNT_POST_MAP[ip]
+	if prs && ipCount > MAX_POST_PER_IP {
+		writer.WriteHeader(http.StatusTooManyRequests)
+		return
+	} else {
+		if prs {
+			IP_COUNT_POST_MAP[ip] = ipCount + 1
+		} else {
+			IP_COUNT_POST_MAP[ip] = 1
+		}
+	}
 
 	// FIRESTORE CONNECTION
 	// TODO: use a connection pool; see 'google.golang.org/api/option' package
@@ -206,6 +225,20 @@ func postClaps(writer http.ResponseWriter, request *http.Request) {
 // GET
 func getClaps(writer http.ResponseWriter, request *http.Request) {
 	referrer := request.Header.Get("Referer")
+	ip := request.Header.Get("x-forwarded-for")
+
+	// REQUEST COUNT LIMIT
+	ipCount, prs := IP_COUNT_GET_MAP[ip]
+	if prs && ipCount > MAX_GET_PER_IP {
+		writer.WriteHeader(http.StatusTooManyRequests)
+		return
+	} else {
+		if prs {
+			IP_COUNT_GET_MAP[ip] = ipCount + 1
+		} else {
+			IP_COUNT_GET_MAP[ip] = 1
+		}
+	}
 
 	// FIRESTORE connection
 	// TODO: use a connection pool; see 'google.golang.org/api/option' package
