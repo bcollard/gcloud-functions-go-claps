@@ -27,16 +27,15 @@ const REDIS_MAX_CONN = 10
 var client *firestore.Client
 const COLLECTION = "claps"
 var PROJECT_ID = ""
-var ReferrerWhitelistRegex = `^https:\/\/www.baptistout.net\/posts\/[\w\d-]+\/?$`
+var referrerWhitelistRegex = `^https:\/\/www.baptistout.net\/posts\/[\w\d-]+\/?$`
 var referrerRegexp *regexp.Regexp
-var CorsWhitelist = []string{"https://www.baptistout.net"}
-var OauthRedirectUri = "http://localhost:8080/secure/oauthcallback"
+var corsWhitelist = []string{"https://www.baptistout.net"}
+var oauthRedirectUri = "http://localhost:8080/secure/oauthcallback"
 var ipCountGetMap, ipCountPostMap map[string]int
 const MAX_GET_PER_IP = 1000;
 const MAX_POST_PER_IP = 200;
 var oauthConfig *oauth2.Config
-const jwksURL = "https://www.googleapis.com/oauth2/v3/certs"
-var pubkey *interface{}
+const JWKS_URL = "https://www.googleapis.com/oauth2/v3/certs"
 
 // function cold start init
 func init() {
@@ -49,11 +48,11 @@ func init() {
 	}
 
 	if os.Getenv("FIRESTORE_ENV") == "local" {
-		CorsWhitelist = append(CorsWhitelist,"http://localhost:1313")
+		corsWhitelist = append(corsWhitelist,"http://localhost:1313")
 		referrerRegexp, _ = regexp.Compile(`^http:\/\/localhost:1313\/posts\/[\w\d-]+\/?$`)
 	} else {
-		OauthRedirectUri = os.Getenv("OAUTH_REDIRECT_URI")
-		referrerRegexp, _ = regexp.Compile(ReferrerWhitelistRegex)
+		oauthRedirectUri = os.Getenv("OAUTH_REDIRECT_URI")
+		referrerRegexp, _ = regexp.Compile(referrerWhitelistRegex)
 	}
 
 	ipCountGetMap = make(map[string]int, 10)
@@ -66,7 +65,7 @@ func init() {
 	}
 	scopes := "openid email"
 	oauthConfig, err = google.ConfigFromJSON(data, scopes)
-	oauthConfig.RedirectURL = OauthRedirectUri
+	oauthConfig.RedirectURL = oauthRedirectUri
 
 }
 
@@ -103,7 +102,7 @@ func newMux() *http.ServeMux {
 
 	// RATE LIMITING
 	quota := throttled.RateQuota{
-		MaxRate: throttled.PerMin(2),
+		MaxRate: throttled.PerSec(10),
 		MaxBurst: 5,
 	}
 
@@ -131,7 +130,7 @@ func newMux() *http.ServeMux {
 		VaryBy:      &throttled.VaryBy{Headers: headers},
 	}
 
-	// MAIN ROUTER: apply rate-limiting to GET + POST methods and route request to dedicated function
+	// MAIN ROUTER: apply some middleware and route request to dedicated function
 	mux.Handle("/", httpRateLimiter.RateLimit(
 		http.HandlerFunc(
 			func(writer http.ResponseWriter, request *http.Request) {
@@ -165,7 +164,7 @@ func newMux() *http.ServeMux {
 				}
 			})))
 
-	// OAUTH secured endpoint
+	// OAUTH secured endpoints
 	mux.HandleFunc("/secure/auth", func(writer http.ResponseWriter, r *http.Request) {
 		secAuthorize(writer, r)
 	})
@@ -206,7 +205,7 @@ func getKey(token *jwt.Token) (interface{}, error) {
 
 	// TODO: cache response so we don't have to make a request every time
 	// we want to verify a JWT
-	set, err := jwk.FetchHTTP(jwksURL)
+	set, err := jwk.FetchHTTP(JWKS_URL)
 	if err != nil {
 		return nil, err
 	}
@@ -233,7 +232,7 @@ func secAuthorize(writer http.ResponseWriter, r *http.Request) {
 func validCors(request *http.Request) (bool, string) {
 	origin := request.Header.Get("Origin")
 
-	for _, v := range CorsWhitelist {
+	for _, v := range corsWhitelist {
 		if v == origin {
 			return true, origin
 		}
@@ -345,7 +344,7 @@ func getClaps(writer http.ResponseWriter, request *http.Request) {
 // Clapsgo is the Function entrypoint
 func Clapsgo(w http.ResponseWriter, r *http.Request) {
 
-	// use another http.ServeMux in order to do some routing by sub-paths
+	// use another http.ServeMux in order to do some routing
 	mux.ServeHTTP(w, r)
 }
 
