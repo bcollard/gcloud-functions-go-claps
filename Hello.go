@@ -21,11 +21,11 @@ const REDIS_MAX_CONN = 10
 var client *firestore.Client
 const COLLECTION = "claps"
 var PROJECT_ID = ""
-var REFERRER_WHITELIST_REGEX = `^https:\/\/www.baptistout.net\/posts\/[\w\d-]+\/?$`
+var ReferrerWhitelistRegex = `^https:\/\/www.baptistout.net\/posts\/[\w\d-]+\/?$`
 var referrerRegexp *regexp.Regexp
-var CORS_WHITELIST = []string{"https://www.baptistout.net"}
-var OAUTH_REDIRECT_URI = "http://localhost:8080/secure/oauthcallback"
-var IP_COUNT_GET_MAP, IP_COUNT_POST_MAP map[string]int
+var CorsWhitelist = []string{"https://www.baptistout.net"}
+var OauthRedirectUri = "http://localhost:8080/secure/oauthcallback"
+var ipCountGetMap, ipCountPostMap map[string]int
 const MAX_GET_PER_IP = 1000;
 const MAX_POST_PER_IP = 200;
 
@@ -41,15 +41,15 @@ func init() {
 	}
 
 	if os.Getenv("FIRESTORE_ENV") == "local" {
-		CORS_WHITELIST = append(CORS_WHITELIST,"http://localhost:1313")
+		CorsWhitelist = append(CorsWhitelist,"http://localhost:1313")
 		referrerRegexp, _ = regexp.Compile(`^http:\/\/localhost:1313\/posts\/[\w\d-]+\/?$`)
 	} else {
-		OAUTH_REDIRECT_URI = os.Getenv("OAUTH_REDIRECT_URI")
-		referrerRegexp, _ = regexp.Compile(REFERRER_WHITELIST_REGEX)
+		OauthRedirectUri = os.Getenv("OauthRedirectUri")
+		referrerRegexp, _ = regexp.Compile(ReferrerWhitelistRegex)
 	}
 
-	IP_COUNT_GET_MAP = make(map[string]int, 10)
-	IP_COUNT_POST_MAP = make(map[string]int, 10)
+	ipCountGetMap = make(map[string]int, 10)
+	ipCountPostMap = make(map[string]int, 10)
 }
 
 func initializeRedis() (*redis.Pool, error) {
@@ -159,7 +159,7 @@ func newMux() *http.ServeMux {
 func validCors(request *http.Request) (bool, string) {
 	origin := request.Header.Get("Origin")
 
-	for _, v := range CORS_WHITELIST {
+	for _, v := range CorsWhitelist {
 		if v == origin {
 			return true, origin
 		}
@@ -179,15 +179,15 @@ func postClaps(writer http.ResponseWriter, request *http.Request) {
 	ip := request.Header.Get("x-forwarded-for")
 
 	// REQUEST COUNT LIMIT
-	ipCount, prs := IP_COUNT_POST_MAP[ip]
+	ipCount, prs := ipCountPostMap[ip]
 	if prs && ipCount > MAX_POST_PER_IP {
 		writer.WriteHeader(http.StatusTooManyRequests)
 		return
 	} else {
 		if prs {
-			IP_COUNT_POST_MAP[ip] = ipCount + 1
+			ipCountPostMap[ip] = ipCount + 1
 		} else {
-			IP_COUNT_POST_MAP[ip] = 1
+			ipCountPostMap[ip] = 1
 		}
 	}
 
@@ -228,15 +228,15 @@ func getClaps(writer http.ResponseWriter, request *http.Request) {
 	ip := request.Header.Get("x-forwarded-for")
 
 	// REQUEST COUNT LIMIT
-	ipCount, prs := IP_COUNT_GET_MAP[ip]
+	ipCount, prs := ipCountGetMap[ip]
 	if prs && ipCount > MAX_GET_PER_IP {
 		writer.WriteHeader(http.StatusTooManyRequests)
 		return
 	} else {
 		if prs {
-			IP_COUNT_GET_MAP[ip] = ipCount + 1
+			ipCountGetMap[ip] = ipCount + 1
 		} else {
-			IP_COUNT_GET_MAP[ip] = 1
+			ipCountGetMap[ip] = 1
 		}
 	}
 
