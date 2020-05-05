@@ -3,10 +3,16 @@ package claps
 import (
 	"cloud.google.com/go/firestore"
 	"context"
+	"errors"
 	"fmt"
+	"github.com/dgrijalva/jwt-go"
 	"github.com/gomodule/redigo/redis"
+	"github.com/lestrrat-go/jwx/jwk"
 	"github.com/throttled/throttled"
 	"github.com/throttled/throttled/store/redigostore"
+	"golang.org/x/oauth2"
+	"golang.org/x/oauth2/google"
+	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
@@ -28,7 +34,9 @@ var OauthRedirectUri = "http://localhost:8080/secure/oauthcallback"
 var ipCountGetMap, ipCountPostMap map[string]int
 const MAX_GET_PER_IP = 1000;
 const MAX_POST_PER_IP = 200;
-
+var oauthConfig *oauth2.Config
+const jwksURL = "https://www.googleapis.com/oauth2/v3/certs"
+var pubkey *interface{}
 
 // function cold start init
 func init() {
@@ -44,12 +52,22 @@ func init() {
 		CorsWhitelist = append(CorsWhitelist,"http://localhost:1313")
 		referrerRegexp, _ = regexp.Compile(`^http:\/\/localhost:1313\/posts\/[\w\d-]+\/?$`)
 	} else {
-		OauthRedirectUri = os.Getenv("OauthRedirectUri")
+		OauthRedirectUri = os.Getenv("OAUTH_REDIRECT_URI")
 		referrerRegexp, _ = regexp.Compile(ReferrerWhitelistRegex)
 	}
 
 	ipCountGetMap = make(map[string]int, 10)
 	ipCountPostMap = make(map[string]int, 10)
+
+	//dir, _ := os.Getwd()
+	data, err := ioutil.ReadFile("../oauth_client_secret.json")
+	if err != nil {
+		log.Fatal(err)
+	}
+	scopes := "openid email"
+	oauthConfig, err = google.ConfigFromJSON(data, scopes)
+	oauthConfig.RedirectURL = OauthRedirectUri
+
 }
 
 func initializeRedis() (*redis.Pool, error) {
@@ -147,12 +165,68 @@ func newMux() *http.ServeMux {
 				}
 			})))
 
-	// API subpath
-	mux.HandleFunc("/one", func(writer http.ResponseWriter, r *http.Request) {
-		fmt.Fprintf(writer, "%v", count)
+	// OAUTH secured endpoint
+	mux.HandleFunc("/secure/auth", func(writer http.ResponseWriter, r *http.Request) {
+		secAuthorize(writer, r)
+	})
+
+	mux.HandleFunc("/secure/oauthcallback", func(writer http.ResponseWriter, r *http.Request) {
+		secOAuthCallback(writer, r)
 	})
 
 	return mux
+}
+
+func secOAuthCallback(writer http.ResponseWriter, r *http.Request) {
+	code := r.FormValue("code")
+	token, err := oauthConfig.Exchange(context.Background(), code, oauth2.AccessTypeOnline)
+	if err != nil {
+		log.Print(err)
+		writer.WriteHeader(http.StatusBadRequest)
+	}
+
+	idToken := token.Extra("id_token").(string)
+	tok, err := jwt.Parse(idToken, getKey)
+	if err != nil {
+		panic(err)
+	}
+	if tok.Valid {
+		claims := tok.Claims.(jwt.MapClaims)
+		if claims.VerifyIssuer("https://accounts.google.com", true) && claims["email"] == os.Getenv("SUPER_USER_MAIL_ADDRESS") {
+			fmt.Fprintf(writer, "%v, %v", ipCountGetMap, ipCountPostMap)
+		} else {
+			writer.WriteHeader(http.StatusForbidden)
+		}
+	} else {
+		writer.WriteHeader(http.StatusForbidden)
+	}
+}
+
+func getKey(token *jwt.Token) (interface{}, error) {
+
+	// TODO: cache response so we don't have to make a request every time
+	// we want to verify a JWT
+	set, err := jwk.FetchHTTP(jwksURL)
+	if err != nil {
+		return nil, err
+	}
+
+	keyID, ok := token.Header["kid"].(string)
+	if !ok {
+		return nil, errors.New("expecting JWT header to have string kid")
+	}
+
+	if key := set.LookupKeyID(keyID); len(key) == 1 {
+		return key[0].Materialize()
+	}
+
+	return nil, fmt.Errorf("unable to find key %q", keyID)
+}
+
+func secAuthorize(writer http.ResponseWriter, r *http.Request) {
+	url := oauthConfig.AuthCodeURL("abcdef", oauth2.AccessTypeOnline)
+	writer.Header().Add("Location", url)
+	writer.WriteHeader(http.StatusFound)
 }
 
 
