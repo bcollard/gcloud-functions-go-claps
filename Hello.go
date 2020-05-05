@@ -36,6 +36,7 @@ const MAX_GET_PER_IP = 1000;
 const MAX_POST_PER_IP = 200;
 var oauthConfig *oauth2.Config
 const JWKS_URL = "https://www.googleapis.com/oauth2/v3/certs"
+var resourcesPrefix = "../"
 
 // function cold start init
 func init() {
@@ -53,13 +54,14 @@ func init() {
 	} else {
 		oauthRedirectUri = os.Getenv("OAUTH_REDIRECT_URI")
 		referrerRegexp, _ = regexp.Compile(referrerWhitelistRegex)
+		resourcesPrefix = "/workspace/serverless_function_source_code/"
 	}
 
 	ipCountGetMap = make(map[string]int, 10)
 	ipCountPostMap = make(map[string]int, 10)
 
 	//dir, _ := os.Getwd()
-	data, err := ioutil.ReadFile("../oauth_client_secret.json")
+	data, err := ioutil.ReadFile(resourcesPrefix + "oauth_client_secret.json")
 	if err != nil {
 		log.Fatal(err)
 	}

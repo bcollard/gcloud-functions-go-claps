@@ -39,6 +39,7 @@ deploy: ## deploy the function to GCP
 		--allow-unauthenticated \
 		--set-env-vars PROJECT_ID=${PROJECT_ID} \
 		--set-env-vars REDIS_HOST=10.29.74.131 \
+		--set-env-vars REDIS_PORT=6379 \
 		--vpc-connector projects/${PROJECT_ID}/locations/europe-west1/connectors/bco-serverless-connector \
 		--set-env-vars OAUTH_REDIRECT_URI=https://${GCP_REGION}-${PROJECT_ID}.cloudfunctions.net/${FUNCTION}/secure/oauthcallback \
 		--set-env-vars SUPER_USER_MAIL_ADDRESS=${SUPER_USER_MAIL_ADDRESS}
