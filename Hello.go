@@ -206,7 +206,7 @@ func postClaps(writer http.ResponseWriter, request *http.Request) {
 
 	documentSnapshot, err := q.Documents(ctx).Next()
 	if err != nil {
-		fmt.Printf("could not iterate: %v", err)
+		fmt.Fprint(writer,1)
 		// ADD new doc
 		claps.Add(ctx, map[string]interface{}{
 			"url": referrer,
@@ -219,6 +219,7 @@ func postClaps(writer http.ResponseWriter, request *http.Request) {
 			fmt.Printf("could not get claps count, %v", err)
 		}
 		documentSnapshot.Ref.Update(ctx, []firestore.Update{{Path: "claps", Value: rawClaps.(int64) + 1}})
+		fmt.Fprint(writer, rawClaps.(int64) + 1)
 	}
 }
 
