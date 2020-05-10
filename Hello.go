@@ -27,7 +27,7 @@ const REDIS_MAX_CONN = 10
 var client *firestore.Client
 const COLLECTION = "claps"
 var PROJECT_ID = ""
-var referrerWhitelistRegex = `^https:\/\/www.baptistout.net\/posts\/[\w\d-]+\/?$`
+var referrerWhitelistRegex = `^https:\/\/www.baptistout.net\/posts\/[\w\d-]+\/?#?[\w\d-_\?&=]*$`
 var referrerRegexp *regexp.Regexp
 var corsWhitelist = []string{"https://www.baptistout.net"}
 var oauthRedirectUri = "http://localhost:8080/secure/oauthcallback"
@@ -50,7 +50,7 @@ func init() {
 
 	if os.Getenv("FIRESTORE_ENV") == "local" {
 		corsWhitelist = append(corsWhitelist,"http://localhost:1313")
-		referrerRegexp, _ = regexp.Compile(`^http:\/\/localhost:1313\/posts\/[\w\d-]+\/?$`)
+		referrerRegexp, _ = regexp.Compile(`^http:\/\/localhost:1313\/posts\/[\w\d-]+\/?#?[\w\d-_\?&=]*$`)
 	} else {
 		oauthRedirectUri = os.Getenv("OAUTH_REDIRECT_URI")
 		referrerRegexp, _ = regexp.Compile(referrerWhitelistRegex)
