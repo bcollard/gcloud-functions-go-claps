@@ -27,9 +27,9 @@ const REDIS_MAX_CONN = 10
 var client *firestore.Client
 const COLLECTION = "claps"
 var PROJECT_ID = ""
-var referrerWhitelistRegex = `^https:\/\/www.baptistout.net\/posts\/[\w\d-]+\/?#?[\w\d-_\?&=]*$`
+var referrerWhitelistRegex = `^https:\/\/baptistout.net\/posts\/[\w\d-]+\/?#?[\w\d-_\?&=]*$`
 var referrerRegexp *regexp.Regexp
-var corsWhitelist = []string{"https://www.baptistout.net"}
+var corsWhitelist = []string{"https://baptistout.net"}
 var oauthRedirectUri = "http://localhost:8080/secure/oauthcallback"
 var ipCountGetMap, ipCountPostMap map[string]int
 const MAX_GET_PER_IP = 1000;
